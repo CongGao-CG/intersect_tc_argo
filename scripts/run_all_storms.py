@@ -1,11 +1,15 @@
 #!/usr/bin/env python3
 """
-run_all_storms.py  – chronological aggregate
--------------------------------------------
-Scan HURDAT2 single-storm files (AL*.txt) for years 1997-2024, oldest first,
-find day/1° intersections with Argo profiles, and write them all into
+run_all_storms.py  – chronological aggregate with storm ID prefix
+---------------------------------------------------------------
+For every AL*.txt (1997–2024) find day/1° intersections with Argo
+profiles and write them all into ONE file:
 
     output/all_tc_argo_intersections.txt
+
+Line format
+-----------
+AL082002, 20020913, 1800,  , EX, 56.0N,  49.5W, … , YYYYMMDD, lat°, lon°360, argo/path.nc
 """
 
 from __future__ import annotations
@@ -20,8 +24,8 @@ OUTFILE = OUTDIR / "all_tc_argo_intersections.txt"
 
 YEAR_RE = re.compile(r"AL\d{2}(\d{4})")
 
-# ---------- helper: load one year's Argo table (cached) -----------------
-argo_cache: dict[int, dict[tuple, list[str]]] = {}
+# ---------- cache Argo lookups ------------------------------------------
+argo_cache: dict[int, dict] = {}
 
 def load_argo_year(year: int) -> dict:
     if year in argo_cache:
@@ -29,7 +33,7 @@ def load_argo_year(year: int) -> dict:
 
     jpath = DOCS / f"{year}.json"
     if not jpath.exists():
-        print(f"⚠ Missing {jpath}; skipping year {year}")
+        print(f"⚠ Missing {jpath} — skipping year {year}")
         argo_cache[year] = {}
         return argo_cache[year]
 
@@ -40,51 +44,53 @@ def load_argo_year(year: int) -> dict:
     argo_cache[year] = lookup
     return lookup
 
-# ---------- helper: iterate HURDAT fixes -------------------------------
+# ---------- iterate fixes ------------------------------------------------
 def fixes(txt_path: pathlib.Path):
+    """
+    Yield (storm_id, orig_line, ymd, lat_round, lon_round360)
+    """
     with txt_path.open() as f:
-        next(f)                 # header line: ALxxxx, NAME, npts
+        header = next(f).strip()          # "AL082002, GUSTAV, 22,"
+        storm_id = header.split(",")[0]
         for line in f:
             parts = [p.strip() for p in line.split(",")]
-            ymd = int(parts[0])
-
-            lat_s, lon_s = parts[4], parts[5]     # positions after empty col
+            ymd      = int(parts[0])
+            lat_s, lon_s = parts[4], parts[5]   # 56.0N  49.5W
 
             lat  = float(lat_s[:-1]) * (1 if lat_s[-1] == "N" else -1)
             lon  = float(lon_s[:-1]) * (1 if lon_s[-1] == "E" else -1)
             lon360 = (lon % 360 + 360) % 360
 
-            yield line.rstrip("\n"), ymd, round(lat), round(lon360)
+            yield storm_id, line.rstrip("\n"), ymd, round(lat), round(lon360)
 
-# ---------- gather storm files in chrono order -------------------------
+# ---------- gather storm files in chrono order --------------------------
 storm_files: list[pathlib.Path] = []
-for year in range(1997, 2025):                   # inclusive
-    # AL01..AL99 pattern, naturally sorted
-    storm_files.extend(sorted(DATA.glob(f"AL??{year}*.txt")))
+for yr in range(1997, 2025):
+    storm_files.extend(sorted(DATA.glob(f"AL??{yr}*.txt")))
 
 if not storm_files:
-    sys.exit("No AL*.txt files for years 1997-2024 found in data/")
+    sys.exit("No AL*.txt files for 1997-2024 found in data/")
 
 # ---------- main loop ---------------------------------------------------
-all_matches: list[str] = []
+all_lines: list[str] = []
 
 for txt in storm_files:
-    year = int(YEAR_RE.search(txt.name).group(1))
-    argo_lookup = load_argo_year(year)
+    yr = int(YEAR_RE.search(txt.name).group(1))
+    argo_lookup = load_argo_year(yr)
 
     print(f"{txt.name} … ", end="", flush=True)
     added = 0
-    for orig, ymd, lat_r, lon_r in fixes(txt):
-        k = (ymd, lat_r, lon_r)
-        if k in argo_lookup:
-            for afile in argo_lookup[k]:
-                all_matches.append(f"{orig}, {ymd}, {lat_r}, {lon_r}, {afile}")
+    for sid, orig, ymd, lat_r, lon_r in fixes(txt):
+        key = (ymd, lat_r, lon_r)
+        if key in argo_lookup:
+            for path in argo_lookup[key]:
+                all_lines.append(f"{sid}, {orig}, {ymd}, {lat_r}, {lon_r}, {path}")
                 added += 1
     print(f"{added} match(es)")
 
 # ---------- write master file ------------------------------------------
-if all_matches:
-    OUTFILE.write_text("\n".join(all_matches) + "\n")
-    print(f"\n✅  Wrote {len(all_matches):,} intersections to {OUTFILE}")
+if all_lines:
+    OUTFILE.write_text("\n".join(all_lines) + "\n")
+    print(f"\n✅  Wrote {len(all_lines):,} lines to {OUTFILE}")
 else:
-    print("\n— No intersections found for any storm file —")
+    print("\n— No intersections found —")
