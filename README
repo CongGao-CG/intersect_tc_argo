@@ -14,7 +14,7 @@ all Python scripts to find the intersections
 
 The Python scripts should be run in order:
 run_all_storms.py (which relies on intersect_tc_argo.py)
+find_argo_leads.py
 fetch_nc_flat.py (fetch_nc_from_intersections.py is not needed)
 nc2csv_flat.py
-find_argo_leads.py
 
