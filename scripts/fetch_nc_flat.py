@@ -1,57 +1,40 @@
 #!/usr/bin/env python3
 """
-Fetch each .nc path mentioned in output/all_tc_argo_intersections.txt
-and save it flattened into data/<unique-name>.nc
+fetch_nc_flat.py  (v2)
+----------------------
+Download every NetCDF path listed in
+output/all_argo-based_wakes.txt and save the file directly as
 
-Name rules
-----------
-1. Start with the original basename (D4900101_007.nc)
-2. If that name already exists, prefix "dac_floatid_" taken from
-   the GDAC path parts:  meds/4900101/profiles/ → meds_4900101_
+    data/<basename>.nc
 
-Example
--------
-meds/4900101/profiles/D4900101_007.nc   -> D4900101_007.nc
-nodc/4900101/profiles/D4900101_007.nc   -> nodc_4900101_D4900101_007.nc
+If the file already exists in data/, it is skipped.
 """
 
 from __future__ import annotations
-import pathlib, requests, collections
+import pathlib, requests
 
-ROOT   = pathlib.Path(__file__).resolve().parent.parent
-DATA   = ROOT / "data"
-LIST   = ROOT / "output" / "all_tc_argo_intersections.txt"
-BASE   = "https://data-argo.ifremer.fr/dac"
+ROOT  = pathlib.Path(__file__).resolve().parent.parent
+DATA  = ROOT / "data"
+LIST  = ROOT / "output" / "all_argo-based_wakes.txt"
+BASE  = "https://data-argo.ifremer.fr/dac"
 
-def parse_paths() -> list[pathlib.Path]:
-    seen = set()
-    paths = []
-    for ln in LIST.read_text().splitlines():
-        if not ln.strip():
-            continue
-        rel = pathlib.Path(ln.split(",")[-1].strip())
-        if rel not in seen:
-            paths.append(rel)
-            seen.add(rel)
+def dedup_paths() -> list[pathlib.Path]:
+    seen, paths = set(), []
+    for line in LIST.read_text().splitlines():
+        if line.strip():
+            rel = pathlib.Path(line.split(",")[-1].strip())
+            if rel not in seen:
+                paths.append(rel)
+                seen.add(rel)
     return paths
 
-def unique_name(rel: pathlib.Path, used: set[str]) -> pathlib.Path:
-    name = rel.name
-    if name not in used:
-        used.add(name)
-        return DATA / name
-    # clash -> prefix "dac_floatid_"
-    dac, float_id = rel.parts[0], rel.parts[1]
-    pref = f"{dac}_{float_id}_{name}"
-    used.add(pref)
-    return DATA / pref
-
-def download_all(paths: list[pathlib.Path]):
+def main():
     DATA.mkdir(exist_ok=True)
-    used_names = {p.name for p in DATA.glob("*.nc")}  # avoid overwriting existing files
+    paths = dedup_paths()
+    print(f"{len(paths):,} unique .nc paths")
 
     for rel in paths:
-        dest = unique_name(rel, used_names)
+        dest = DATA / rel.name
         if dest.exists():
             print(f"skip  {dest.name}")
             continue
@@ -63,7 +46,7 @@ def download_all(paths: list[pathlib.Path]):
             r.raise_for_status()
             dest.write_bytes(r.content)
         except Exception as e:
-            print(f"fail  {rel}  ({e})")
+            print(f"fail  {rel} ({e})")
 
 if __name__ == "__main__":
-    download_all(parse_paths())
+    main()
