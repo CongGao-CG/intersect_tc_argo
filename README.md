@@ -6,7 +6,7 @@ Argo profiles downloaded from https://data-argo.ifremer.fr/dac/
 
 ## The docs folder contains:
 
-index of Argo profiles copied from docs of https://github.com/CongGao-CG/argo-file-lookup
+index of Argo profiles copied from docs of https://github.com/CongGao-CG/argo_file_lookup
 
 ## The outputs folder contains:
 
